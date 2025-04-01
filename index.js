@@ -139,8 +139,7 @@ app.get('/export-excel', async (req, res) => {
 
 
 
-// Start the server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(`Server is running at ${process.env.PORT ? `https://backendchrist.onrender.com` : `http://localhost:${PORT}`}`);
 });
