@@ -1,42 +1,55 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const cors = require('cors');
-const xlsx = require('xlsx');
-const User = require('./User');  // Ensure path to User model is correct
+const express = require("express");
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+const cors = require("cors");
+const xlsx = require("xlsx");
+const QRCode = require("qrcode");
+const User = require("./User");
 
 const app = express();
 
-dotenv.config(); // Load environment variables from .env file
+dotenv.config();
 
-// Middleware to parse form data
-app.use(express.urlencoded({ extended: true }));  // For form submissions
-app.use(express.json()); // For handling JSON requests
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cors({ origin: "*" }));
 
-// Enable CORS for all origins (you can replace "*" with specific origins for security)
-app.use(cors());
-
-// MongoDB connection
-mongoose.connect(process.env.MONGO_URI, {
+// **Connect to MongoDB**
+mongoose
+  .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-})
-.then(() => {
-    console.log("MongoDB connected successfully");
-})
-.catch((err) => {
-    console.error("MongoDB connection error:", err);
-});
-app.post('/submit-form', async (req, res) => {
-  try {
-    console.log(req.body);  // Log the request body to debug
+  })
+  .then(() => console.log("MongoDB connected successfully"))
+  .catch((err) => console.error("MongoDB connection error:", err));
 
-    const { 
-      fullName, email, phone, houseName, place, parish, dob, experience, 
-      accommodation, gender, category, spouseName, homeLocation,spousePhone, numChildren, children 
+// **Form Submission Route**
+app.post("/submit-form", async (req, res) => {
+  try {
+    console.log(req.body);
+
+    const {
+      fullName,
+      email,
+      phone,
+      houseName,
+      place,
+      parish,
+      dob,
+      experience,
+      accommodation,
+      gender,
+      category,
+      spouseName,
+      homeLocation,
+      spousePhone,
+      numChildren,
+      children,
+      paymentOption,
     } = req.body;
 
-    // Create new user document
+    const paymentStatus = paymentOption === "Pay Now" ? "Yes" : "No";
+
     const newUser = new User({
       fullName,
       email,
@@ -53,46 +66,83 @@ app.post('/submit-form', async (req, res) => {
       spousePhone,
       homeLocation,
       numChildren,
-      children
+      children,
+      paymentStatus,
     });
 
-    // Save to database
     await newUser.save();
-    res.status(201).json({ message: "Form submitted successfully!" });
 
+    let qrCodeDataURL = null;
+    if (paymentOption === "Pay Now") {
+      const upiId = "jesusyouthmananthavasy@okhdfcbank";
+      const upiString = `upi://pay?pa=${upiId}&pn=${fullName}&cu=INR`;
+      qrCodeDataURL = await QRCode.toDataURL(upiString);
+    }
+
+    res.status(201).json({
+      message: "Form submitted successfully!",
+      paymentStatus,
+      qrCode: qrCodeDataURL,
+    });
   } catch (error) {
     console.error("Error submitting form:", error);
     res.status(500).json({ message: "Server error. Please try again later." });
   }
 });
 
-// GET route to fetch all users
-app.get('/registered-users', async (req, res) => {
+// **Get All Registered Users**
+app.get("/registered-users", async (req, res) => {
   try {
-    const users = await User.find();  // Fetch all users from the database
-    res.json(users);  // Send users data as JSON response
+    const users = await User.find();
+    res.json(users);
   } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).send('Error fetching users');
+    console.error("Error fetching users:", error);
+    res.status(500).send("Error fetching users");
   }
 });
 
-// Route to fetch a specific user by ID (for example)
-app.get('/user/:id', async (req, res) => {
-  const { id } = req.params;
+// **Get User by ID**
+app.get("/user/:id", async (req, res) => {
   try {
-    const user = await User.findById(id);  // Fetch user by ID
-    if (!user) {
-      return res.status(404).send('User not found');
-    }
-    res.json(user);  // Send user data as JSON response
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).send("User not found");
+    res.json(user);
   } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).send('Error fetching user');
+    console.error("Error fetching user:", error);
+    res.status(500).send("Error fetching user");
   }
 });
 
-app.get('/export-excel', async (req, res) => {
+
+
+// **Update Payment Status**
+app.post("/update-payment-status", async (req, res) => {
+  const { email, paymentStatus } = req.body;
+  
+  if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+  }
+
+  try {
+      // Assuming you're using MongoDB with Mongoose
+      const user = await User.findOneAndUpdate(
+          { email },
+          { paymentStatus },
+          { new: true }
+      );
+
+      if (!user) {
+          return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({ message: "Payment status updated successfully", user });
+  } catch (error) {
+      res.status(500).json({ message: "Server error", error });
+  }
+});
+
+// **Export Data to Excel**
+app.get("/export-excel", async (req, res) => {
   try {
     const users = await User.find();
 
@@ -100,7 +150,7 @@ app.get('/export-excel', async (req, res) => {
       return res.status(404).json({ message: "No users found" });
     }
 
-    const data = users.map(user => ({
+    const data = users.map((user) => ({
       ID: user._id.toString(),
       FullName: user.fullName || "N/A",
       HouseName: user.houseName || "N/A",
@@ -116,9 +166,13 @@ app.get('/export-excel', async (req, res) => {
       SpouseName: user.spouseName || "N/A",
       SpousePhone: user.spousePhone || "N/A",
       NumberOfChildren: user.numChildren || 0,
-      ChildrenDetails: user.children && user.children.length > 0 
-        ? user.children.map(child => `${child.name} (${child.age} years, ${child.gender})`).join(", ") 
-        : "N/A"
+      PaymentStatus: user.paymentStatus || "No", // ✅ Include payment status in export
+      ChildrenDetails:
+        user.children && user.children.length > 0
+          ? user.children
+              .map((child) => `${child.name} (${child.age} years, ${child.gender})`)
+              .join(", ")
+          : "N/A",
     }));
 
     const ws = xlsx.utils.json_to_sheet(data);
@@ -129,7 +183,7 @@ app.get('/export-excel', async (req, res) => {
 
     res.setHeader("Content-Disposition", "attachment; filename=registered_users.xlsx");
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    
+
     res.send(buffer);
   } catch (error) {
     console.error("Error exporting data:", error);
@@ -137,8 +191,7 @@ app.get('/export-excel', async (req, res) => {
   }
 });
 
-
-
+// **Start Server**
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server is running at ${process.env.PORT ? `https://backendchrist.onrender.com` : `http://localhost:${PORT}`}`);
