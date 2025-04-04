@@ -115,29 +115,30 @@ app.get("/user/:id", async (req, res) => {
 
 
 
-// **Update Payment Status**
-app.post("/update-payment-status", async (req, res) => {
-  const { email, paymentStatus } = req.body;
-  
-  if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-  }
-
+router.post("/update-payment-status", async (req, res) => {
   try {
-      // Assuming you're using MongoDB with Mongoose
-      const user = await User.findOneAndUpdate(
-          { email },
-          { paymentStatus },
-          { new: true }
-      );
+    const { email, paymentStatus } = req.body;
 
-      if (!user) {
-          return res.status(404).json({ message: "User not found" });
-      }
+    if (!email || !paymentStatus) {
+      return res.status(400).json({ success: false, message: "Missing data" });
+    }
 
-      res.json({ message: "Payment status updated successfully", user });
-  } catch (error) {
-      res.status(500).json({ message: "Server error", error });
+    const user = await User.findOneAndUpdate(
+      { email: email.trim().toLowerCase() }, // Normalize
+      { paymentStatus: paymentStatus.toLowerCase() }, // Normalize
+      { new: true }
+    );
+
+    if (!user) {
+      console.log("No user found with email:", email);
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    console.log("Payment status updated:", user.paymentStatus);
+    return res.status(200).json({ success: true, message: "Updated successfully" });
+  } catch (err) {
+    console.error("Error updating payment:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
