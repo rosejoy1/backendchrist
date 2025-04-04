@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
   category: String,
   spouseName: String,
   spousePhone: String,
-  numChildren: { type: Number, default: 0 },
+  numChildren: Number,
   children: [
     {
       name: String,
